@@ -21,6 +21,8 @@ async def handle_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
     context.user_data["url"] = url
 
+    await update.message.reply_text("🔍 Analyzing the link, please wait...")
+
     if "youtube.com" in url or "youtu.be" in url:
         keyboard = [
             [InlineKeyboardButton("🎥 Download Video", callback_data="yt_video")],
@@ -40,7 +42,7 @@ async def download_youtube(update: Update, context: ContextTypes.DEFAULT_TYPE, m
         await update.callback_query.message.reply_text("❗ No URL found.")
         return
 
-    await update.callback_query.message.reply_text("⏬ Downloading from YouTube...")
+    await update.callback_query.message.reply_text("⏬ Downloading from YouTube. Please wait...")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         if mode == "video":
@@ -48,6 +50,10 @@ async def download_youtube(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 'outtmpl': os.path.join(tmpdir, '%(title)s.%(ext)s'),
                 'format': 'bestvideo+bestaudio/best',
                 'merge_output_format': 'mp4',
+                'postprocessors': [{
+                    'key': 'FFmpegVideoConvertor',
+                    'preferedformat': 'mp4'
+                }]
             }
         else:
             ydl_opts = {
@@ -65,18 +71,19 @@ async def download_youtube(update: Update, context: ContextTypes.DEFAULT_TYPE, m
                 info = ydl.extract_info(url, download=True)
                 filename = ydl.prepare_filename(info)
                 if mode == "audio":
-                    filename = filename.rsplit(".", 1)[0] + ".mp3"
+                    filename = os.path.splitext(filename)[0] + ".mp3"
 
             with open(filename, 'rb') as f:
                 if mode == "audio":
                     await update.callback_query.message.reply_audio(audio=f)
                 else:
                     await update.callback_query.message.reply_video(video=f)
+
         except Exception as e:
-            await update.callback_query.message.reply_text(f"❌ Error: {e}")
+            await update.callback_query.message.reply_text(f"❌ YouTube download error: {str(e)}")
 
 async def download_instagram(update: Update, url: str):
-    await update.message.reply_text("📷 Downloading Instagram media...")
+    await update.message.reply_text("📷 Analyzing Instagram link, please wait...")
 
     headers = {
         "X-RapidAPI-Key": RAPIDAPI_KEY,
@@ -88,20 +95,24 @@ async def download_instagram(update: Update, url: str):
         response = requests.get(
             "https://instagram-media-downloader.p.rapidapi.com/rapid/post.php",
             headers=headers,
-            params=params
+            params=params,
+            timeout=10
         )
         result = response.json()
 
         if "media" in result:
             media_url = result["media"]
-            if result["type"] == "video":
+            media_type = result.get("type", "photo")
+
+            if media_type == "video":
                 await update.message.reply_video(media_url)
             else:
                 await update.message.reply_photo(media_url)
         else:
-            await update.message.reply_text("⚠️ Could not retrieve media.")
+            await update.message.reply_text("⚠️ No media found in the Instagram response.")
+
     except Exception as e:
-        await update.message.reply_text(f"❌ Instagram error: {e}")
+        await update.message.reply_text(f"❌ Instagram error: {str(e)}")
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
